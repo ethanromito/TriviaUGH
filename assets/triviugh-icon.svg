@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Trivi-Ugh icon</title>
+  <rect width="512" height="512" rx="64" fill="#ffcf4a"/>
+  <path d="M78 126h356v260H78z" fill="#fffaf1" stroke="#17141f" stroke-width="28" stroke-linejoin="round"/>
+  <path d="M148 206h150M148 278h96" fill="none" stroke="#17141f" stroke-width="32" stroke-linecap="round"/>
+  <circle cx="365" cy="286" r="42" fill="#ff5a7a" stroke="#17141f" stroke-width="24"/>
+  <path d="M99 406l42-42h80" fill="none" stroke="#17141f" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
