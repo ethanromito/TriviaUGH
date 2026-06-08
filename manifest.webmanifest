@@ -1,0 +1,17 @@
+{
+  "name": "Trivi-Ugh",
+  "short_name": "Trivi-Ugh",
+  "description": "Daily trivia with multiple choice questions, logo bonuses, groups, and leaderboards.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffef9f",
+  "theme_color": "#ff5a7a",
+  "icons": [
+    {
+      "src": "assets/triviugh-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

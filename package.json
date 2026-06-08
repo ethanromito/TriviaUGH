@@ -1,0 +1,10 @@
+{
+  "name": "trivi-ugh",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Trivi-Ugh website with a small custom shared backend.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js"
+  }
+}
