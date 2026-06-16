@@ -1,5 +1,6 @@
 const STORAGE_KEYS = {
   profile: "triviugh.profile",
+  auth: "triviugh.auth",
   groups: "triviugh.groups",
   activeGroup: "triviugh.activeGroup",
   records: "triviugh.records"
@@ -10,7 +11,7 @@ const TOPIC_QUESTION_POINTS = 10;
 const TOTAL_POINTS = 30;
 const UGH_SCORE_THRESHOLD = 10;
 const GROUP_NAME_MAX_LENGTH = 28;
-const DAILY_SNAPSHOT_VERSION = 3;
+const DAILY_SNAPSHOT_VERSION = 5;
 const API_BASE = location.protocol === "file:" ? "" : "/api";
 
 const TOPICS = [
@@ -501,6 +502,18 @@ const els = {
   menuLogCount: document.querySelector("#menuLogCount"),
   menuGroupName: document.querySelector("#menuGroupName"),
   menuGroupCode: document.querySelector("#menuGroupCode"),
+  menuAuthStatus: document.querySelector("#menuAuthStatus"),
+  menuAuthDetail: document.querySelector("#menuAuthDetail"),
+  menuLoginButton: document.querySelector("#menuLoginButton"),
+  menuLogoutButton: document.querySelector("#menuLogoutButton"),
+  authOverlay: document.querySelector("#authOverlay"),
+  closeAuthOverlayButton: document.querySelector("#closeAuthOverlayButton"),
+  authNameInput: document.querySelector("#authNameInput"),
+  authEmailInput: document.querySelector("#authEmailInput"),
+  authPasswordInput: document.querySelector("#authPasswordInput"),
+  authLoginButton: document.querySelector("#authLoginButton"),
+  authSignupButton: document.querySelector("#authSignupButton"),
+  authAlert: document.querySelector("#authAlert"),
   joinGroupOverlay: document.querySelector("#joinGroupOverlay"),
   joinOverlayCodeInput: document.querySelector("#joinOverlayCodeInput"),
   joinOverlaySubmitButton: document.querySelector("#joinOverlaySubmitButton"),
@@ -555,12 +568,15 @@ const state = {
   dateLabel: today.label,
   topic: TOPICS[getDailyIndex(today.key)],
   profile: loadJSON(STORAGE_KEYS.profile, null),
+  auth: loadJSON(STORAGE_KEYS.auth, null),
   groups: loadJSON(STORAGE_KEYS.groups, {}),
   activeGroup: getStoredItem(STORAGE_KEYS.activeGroup),
   records: loadJSON(STORAGE_KEYS.records, {}),
   backendAvailable: false,
   remoteLeaderboard: null,
-  selectedHistoryDate: null
+  selectedHistoryDate: null,
+  snapshotLogoHrefs: {},
+  snapshotLogoPromise: null
 };
 
 init().catch((error) => {
@@ -572,6 +588,7 @@ async function init() {
   ensureActiveGroup();
   ensureRecord();
   bindEvents();
+  await preloadSnapshotLogoAssets();
   render();
   await syncBackend();
 
@@ -603,6 +620,14 @@ function bindEvents() {
 
   els.menuGroupButton.addEventListener("click", () => {
     openJoinOverlay();
+  });
+
+  els.menuLoginButton.addEventListener("click", () => {
+    openAuthOverlay();
+  });
+
+  els.menuLogoutButton.addEventListener("click", async () => {
+    await logoutAccount();
   });
 
   els.dailyForm.addEventListener("submit", handleDailySubmit);
@@ -678,6 +703,31 @@ function bindEvents() {
     if (event.target.matches("[data-join-overlay-close]")) closeJoinOverlay();
   });
 
+  els.authLoginButton.addEventListener("click", async () => {
+    await submitAuth("login");
+  });
+
+  els.authSignupButton.addEventListener("click", async () => {
+    await submitAuth("signup");
+  });
+
+  els.authPasswordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      els.authLoginButton.click();
+    }
+  });
+
+  [els.authNameInput, els.authEmailInput, els.authPasswordInput].forEach((input) => {
+    input.addEventListener("input", hideAuthAlert);
+  });
+
+  els.closeAuthOverlayButton.addEventListener("click", closeAuthOverlay);
+
+  els.authOverlay.addEventListener("click", (event) => {
+    if (event.target.matches("[data-auth-overlay-close]")) closeAuthOverlay();
+  });
+
   els.closeLeaderboardOverlayButton.addEventListener("click", closeLeaderboardOverlay);
   els.closeLogsOverlayButton.addEventListener("click", closeLogsOverlay);
 
@@ -734,6 +784,36 @@ function closeJoinOverlay() {
   hideJoinOverlayAlert();
 }
 
+function openAuthOverlay() {
+  closeOpenMenuOverlays();
+  els.authOverlay.hidden = false;
+  els.authNameInput.value = state.profile.name || "";
+  els.authEmailInput.value = state.auth?.email || "";
+  els.authPasswordInput.value = "";
+  hideAuthAlert();
+  window.setTimeout(() => {
+    if (els.authEmailInput.value) {
+      els.authPasswordInput.focus();
+    } else {
+      els.authEmailInput.focus();
+    }
+  }, 0);
+}
+
+function closeAuthOverlay() {
+  els.authOverlay.hidden = true;
+  hideAuthAlert();
+}
+
+function showAuthAlert(message) {
+  els.authAlert.textContent = message;
+  els.authAlert.hidden = false;
+}
+
+function hideAuthAlert() {
+  els.authAlert.hidden = true;
+}
+
 function showJoinOverlayAlert(message) {
   els.joinOverlayAlert.textContent = message;
   els.joinOverlayAlert.hidden = false;
@@ -767,6 +847,7 @@ function closeLogsOverlay() {
 
 function closeOpenMenuOverlays() {
   if (!els.joinGroupOverlay.hidden) closeJoinOverlay();
+  if (!els.authOverlay.hidden) closeAuthOverlay();
   if (!els.leaderboardOverlay.hidden) closeLeaderboardOverlay();
   if (!els.logsOverlay.hidden) closeLogsOverlay();
 }
@@ -809,6 +890,138 @@ async function joinExistingGroup(rawCode, callbacks = {}) {
   return true;
 }
 
+async function submitAuth(mode) {
+  if (!API_BASE) {
+    showAuthAlert("Accounts need the hosted site or local server, not the file preview.");
+    return;
+  }
+
+  const name = cleanName(els.authNameInput.value) || state.profile.name;
+  const email = String(els.authEmailInput.value || "").trim().toLowerCase();
+  const password = String(els.authPasswordInput.value || "");
+  if (!email || password.length < 6) {
+    showAuthAlert("Enter an email and a password with at least 6 characters.");
+    return;
+  }
+
+  const previousProfileId = state.profile.id;
+  const previousRecord = state.records[previousProfileId];
+  const previousActiveGroup = state.activeGroup;
+  const previousGroups = { ...state.groups };
+
+  setAuthBusy(true);
+  try {
+    await apiRequest("/health");
+    state.backendAvailable = true;
+    const payload = await apiRequest(`/auth/${mode}`, {
+      method: "POST",
+      body: {
+        email,
+        password,
+        name: mode === "signup" ? name : ""
+      }
+    });
+    applyAuthPayload(payload, { previousRecord, previousActiveGroup, previousGroups });
+    render();
+    await saveBackendProfile();
+    await saveBackendGroup(state.activeGroup);
+    await joinBackendGroup(state.activeGroup);
+    await pushLocalResultsToBackend();
+    await refreshBackendData();
+    closeAuthOverlay();
+    showToast(mode === "signup" ? "Account created" : "Logged in");
+  } catch (error) {
+    if (!error.status) state.backendAvailable = false;
+    showAuthAlert(error.message || "Account request failed");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+function setAuthBusy(isBusy) {
+  els.authLoginButton.disabled = isBusy;
+  els.authSignupButton.disabled = isBusy;
+  els.authLoginButton.textContent = isBusy ? "Checking..." : "Log in";
+}
+
+async function logoutAccount() {
+  if (state.auth?.token && API_BASE) {
+    try {
+      await apiRequest("/auth/logout", { method: "POST" });
+    } catch {}
+  }
+
+  state.auth = null;
+  removeStoredItem(STORAGE_KEYS.auth);
+  state.remoteLeaderboard = null;
+  state.profile = null;
+  ensureProfile();
+  ensureRecord();
+  saveJSON(STORAGE_KEYS.profile, state.profile);
+  render();
+  showToast("Logged out");
+}
+
+function applyAuthPayload(payload, options = {}) {
+  const player = payload.player;
+  if (!payload.token || !player?.id) {
+    throw new Error("Account response was incomplete");
+  }
+
+  state.auth = {
+    token: payload.token,
+    email: payload.account?.email || ""
+  };
+  state.profile = {
+    id: player.id,
+    name: cleanName(player.name, 18) || state.profile.name
+  };
+
+  (payload.groups || []).forEach((group) => {
+    if (group?.code) state.groups[group.code] = group;
+  });
+
+  const previousGroup = options.previousActiveGroup && options.previousGroups?.[options.previousActiveGroup]
+    ? options.previousGroups[options.previousActiveGroup]
+    : null;
+  if (previousGroup?.code && !state.groups[previousGroup.code]) {
+    state.groups[previousGroup.code] = previousGroup;
+  }
+
+  const nextActiveGroup = payload.activeGroup && state.groups[payload.activeGroup]
+    ? payload.activeGroup
+    : previousGroup?.code || state.activeGroup;
+  if (nextActiveGroup) {
+    state.activeGroup = nextActiveGroup;
+    ensureGroupDefaults(state.activeGroup);
+  }
+
+  const record = {
+    name: state.profile.name,
+    total: 0,
+    streak: 0,
+    days: {}
+  };
+  (payload.results || []).forEach((entry) => {
+    if (entry?.date) record.days[entry.date] = entry;
+  });
+  if (options.previousRecord?.days) {
+    Object.values(options.previousRecord.days).forEach((entry) => {
+      if (entry?.date && !record.days[entry.date]) record.days[entry.date] = entry;
+    });
+  }
+  record.total = sumDailyScores(record.days);
+  record.streak = computeStreak(record.days);
+  state.records[state.profile.id] = record;
+
+  saveJSON(STORAGE_KEYS.auth, state.auth);
+  saveJSON(STORAGE_KEYS.profile, state.profile);
+  saveJSON(STORAGE_KEYS.groups, state.groups);
+  saveJSON(STORAGE_KEYS.records, state.records);
+  setStoredItem(STORAGE_KEYS.activeGroup, state.activeGroup);
+  ensureActiveGroup();
+}
+
 async function handleDailySubmit(event) {
   event.preventDefault();
 
@@ -823,6 +1036,7 @@ async function handleDailySubmit(event) {
     return;
   }
 
+  await preloadSnapshotLogoAssets();
   const result = scoreToday();
   const record = ensureRecord();
   record.days[state.dateKey] = result;
@@ -874,8 +1088,7 @@ function scoreToday() {
 
   const logoDetails = state.topic.logos.map((logo, index) => {
     const guess = String(formData.get(`logo${index}`) || "").trim();
-    const accepted = [logo.answer, ...logo.aliases].map(normalizeAnswer);
-    const correct = accepted.includes(normalizeAnswer(guess));
+    const correct = isAcceptedAnswer(guess, [logo.answer, ...logo.aliases]);
     if (correct) score += logo.points;
     return {
       type: "logo",
@@ -892,8 +1105,8 @@ function scoreToday() {
   const acceptedTopicAnswers = [
     state.topic.topicQuestion.answer,
     ...(state.topic.topicQuestion.aliases || [])
-  ].map(normalizeAnswer);
-  const topicAnswerCorrect = acceptedTopicAnswers.includes(normalizeAnswer(topicAnswerGuess));
+  ];
+  const topicAnswerCorrect = isAcceptedAnswer(topicAnswerGuess, acceptedTopicAnswers);
   if (topicAnswerCorrect) score += TOPIC_QUESTION_POINTS;
   const topicAnswerDetail = {
     type: "topic-answer",
@@ -1147,6 +1360,19 @@ function renderMenu() {
   els.menuGroupName.textContent = getActiveGroupName();
   els.menuGroupCode.textContent = state.activeGroup;
   els.menuRankText.textContent = els.rankText.textContent || "#";
+  renderAuthStatus();
+}
+
+function renderAuthStatus() {
+  const signedIn = Boolean(state.auth?.token);
+  els.menuAuthStatus.textContent = signedIn ? state.profile.name : "Playing locally";
+  els.menuAuthDetail.textContent = signedIn
+    ? state.auth.email || "Account synced"
+    : API_BASE
+      ? "Log in to sync groups and scores."
+      : "Use the hosted site to log in.";
+  els.menuLoginButton.textContent = signedIn ? "Account" : "Log in";
+  els.menuLogoutButton.hidden = !signedIn;
 }
 
 function showMainMenu() {
@@ -1231,12 +1457,77 @@ function renderHistoryViewer(viewer, activeEntry) {
       </div>
       <span class="mini-stat">${activeEntry.score}/${activeEntry.possible} pts</span>
     </div>
-    <img
-      class="history-shot"
-      src="${escapeAttr(activeEntry.snapshot)}"
-      alt="Question screenshot for ${escapeAttr(formatDateKey(activeEntry.date))}"
-    >
+    ${renderDailyLogCard(activeEntry)}
   `;
+}
+
+function renderDailyLogCard(entry) {
+  const topic = getTopicById(entry.topicId) || state.topic;
+  const palette = topic.palette;
+  const questionDetails = getSnapshotDetails(entry, "question");
+  const logoDetails = getSnapshotDetails(entry, "logo");
+  const topicAnswerDetail = getSnapshotDetails(entry, "topic-answer")[0];
+  const style = [
+    `--shot-bg:${palette.bg}`,
+    `--shot-panel:${palette.panel}`,
+    `--shot-secondary:${palette.secondary}`,
+    `--shot-ink:${palette.ink}`,
+    `--shot-muted:${palette.muted}`
+  ].join(";");
+
+  const questions = topic.questions
+    .map((question, index) => {
+      const detail = questionDetails[index];
+      const optionText = question.options
+        .map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`)
+        .join("  ");
+      return `
+        <section class="daily-shot-question ${getDailyLogResultClass(detail)}">
+          <h3>Q${index + 1}. ${escapeHTML(question.prompt)}</h3>
+          <p>${escapeHTML(optionText)}</p>
+        </section>
+      `;
+    })
+    .join("");
+
+  const logos = topic.logos
+    .map((logo, index) => {
+      const detail = logoDetails[index];
+      return `
+        <section class="daily-shot-logo ${getDailyLogResultClass(detail)}">
+          <span class="daily-shot-logo-frame">
+            ${renderLogoMark(logo.mark)}
+          </span>
+          <span class="daily-shot-logo-copy">
+            <strong>${escapeHTML(logo.difficulty)}</strong>
+            <em>${logo.points} point logo</em>
+          </span>
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <article class="daily-shot-card" style="${escapeAttr(style)}" aria-label="Daily screenshot for ${escapeAttr(formatDateKey(entry.date))}">
+      <div class="daily-shot-inner">
+        <span class="daily-shot-badge">Daily screenshot</span>
+        <h2>${escapeHTML(topic.title)}</h2>
+        <p class="daily-shot-meta">${escapeHTML(formatDateKey(entry.date))} - ${entry.score}/${entry.possible} pts</p>
+        <div class="daily-shot-questions">${questions}</div>
+        <h3 class="daily-shot-section-title">Bonus logos</h3>
+        <div class="daily-shot-logo-grid">${logos}</div>
+        <section class="daily-shot-topic ${getDailyLogResultClass(topicAnswerDetail)}">
+          <p>10 point topic answer</p>
+          <h3>${escapeHTML(topic.topicQuestion.prompt)}</h3>
+        </section>
+      </div>
+    </article>
+  `;
+}
+
+function getDailyLogResultClass(detail) {
+  if (!detail) return "";
+  return detail.correct ? "is-correct" : "is-missed";
 }
 
 function getHistoryEntries() {
@@ -1284,11 +1575,12 @@ function createQuestionSnapshot(result) {
   topic.questions.forEach((question, index) => {
     const detail = questionDetails[index];
     const resultTone = getSnapshotResultTone(detail);
-    const promptLines = wrapText(`Q${index + 1}. ${question.prompt}`, 62);
+    const textWidth = cardWidth - 44;
+    const promptLines = wrapSvgText(`Q${index + 1}. ${question.prompt}`, textWidth, 24, 900);
     const optionText = question.options
       .map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`)
       .join("     ");
-    const optionLines = wrapText(optionText, 74);
+    const optionLines = wrapSvgText(optionText, textWidth, 20, 800);
     const cardTop = y - 34;
     const optionY = y + promptLines.length * 29 + 12;
     const cardHeight = 34 + promptLines.length * 29 + 12 + optionLines.length * 24 + 28;
@@ -1314,7 +1606,7 @@ function createQuestionSnapshot(result) {
 
   y += 154;
   const topicTone = getSnapshotResultTone(topicAnswerDetail);
-  const topicPromptLines = wrapText(topic.topicQuestion.prompt, 58);
+  const topicPromptLines = wrapSvgText(topic.topicQuestion.prompt, cardWidth - 44, 23, 900);
   const topicCardHeight = Math.max(122, 80 + topicPromptLines.length * 28 + 24);
   elements.push(`<rect x="${cardX}" y="${y}" width="${cardWidth}" height="${topicCardHeight}" rx="12" fill="${topicTone.fill}" stroke="${topicTone.stroke}" stroke-width="3"/>`);
   elements.push(`<text x="86" y="${y + 34}" font-family="Arial, sans-serif" font-size="20" font-weight="900" fill="${escapeSVG(palette.muted)}">10 point topic answer</text>`);
@@ -1363,13 +1655,73 @@ function getSnapshotResultTone(detail) {
       };
 }
 
+async function preloadSnapshotLogoAssets() {
+  if (state.snapshotLogoPromise) return state.snapshotLogoPromise;
+
+  const marks = [
+    ...new Set(TOPICS.flatMap((topic) => topic.logos.map((logo) => sanitizeLogoMark(logo.mark))))
+  ].filter(Boolean);
+
+  state.snapshotLogoPromise = Promise.all(
+    marks.map(async (mark) => {
+      try {
+        state.snapshotLogoHrefs[mark] = await loadSnapshotLogoDataUrl(mark);
+      } catch {
+        state.snapshotLogoHrefs[mark] = `assets/logos/${mark}.svg`;
+      }
+    })
+  ).then(() => state.snapshotLogoHrefs);
+
+  return state.snapshotLogoPromise;
+}
+
+function loadSnapshotLogoDataUrl(mark) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const timeout = window.setTimeout(() => {
+      image.onload = null;
+      image.onerror = null;
+      reject(new Error("Logo load timed out"));
+    }, 2500);
+
+    image.onload = () => {
+      window.clearTimeout(timeout);
+      try {
+        const canvas = document.createElement("canvas");
+        const size = 192;
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext("2d");
+        context.clearRect(0, 0, size, size);
+        context.drawImage(image, 0, 0, size, size);
+
+        const pixels = context.getImageData(0, 0, size, size);
+        for (let index = 0; index < pixels.data.length; index += 4) {
+          if (pixels.data[index + 3] > 5) {
+            pixels.data[index] = 18;
+            pixels.data[index + 1] = 16;
+            pixels.data[index + 2] = 24;
+          }
+        }
+        context.putImageData(pixels, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    image.onerror = () => {
+      window.clearTimeout(timeout);
+      reject(new Error("Logo failed to load"));
+    };
+
+    image.src = `assets/logos/${sanitizeLogoMark(mark)}.svg`;
+  });
+}
+
 function getSnapshotLogoHref(mark) {
-  const safeMark = String(mark).replace(/[^a-z0-9-]/gi, "");
-  try {
-    return new URL(`assets/logos/${safeMark}.svg`, window.location.href).href;
-  } catch {
-    return `assets/logos/${safeMark}.svg`;
-  }
+  const safeMark = sanitizeLogoMark(mark);
+  return state.snapshotLogoHrefs[safeMark] || `assets/logos/${safeMark}.svg`;
 }
 
 function addSvgTextLines(elements, text, x, y, size, weight, fill, maxChars, lineHeight) {
@@ -1383,6 +1735,70 @@ function addSvgLines(elements, lines, x, y, size, weight, fill, lineHeight) {
     );
   });
   return y + lines.length * lineHeight;
+}
+
+let svgMeasureContext = null;
+function measureSvgText(text, size, weight) {
+  try {
+    if (typeof document !== "undefined" && document.createElement) {
+      if (!svgMeasureContext) {
+        svgMeasureContext = document.createElement("canvas").getContext("2d");
+      }
+      if (svgMeasureContext) {
+        svgMeasureContext.font = `${weight} ${size}px Arial, sans-serif`;
+        return svgMeasureContext.measureText(String(text)).width;
+      }
+    }
+  } catch {
+    svgMeasureContext = null;
+  }
+
+  return String(text).length * size * 0.58;
+}
+
+function wrapSvgText(text, maxWidth, size, weight) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const next = line ? `${line} ${word}` : word;
+    if (line && measureSvgText(next, size, weight) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+
+    if (measureSvgText(line, size, weight) > maxWidth) {
+      const pieces = splitLongSvgWord(line, maxWidth, size, weight);
+      lines.push(...pieces.slice(0, -1));
+      line = pieces[pieces.length - 1] || "";
+    }
+  });
+
+  if (line) lines.push(line);
+  return lines;
+}
+
+function splitLongSvgWord(word, maxWidth, size, weight) {
+  const pieces = [];
+  let piece = "";
+
+  String(word)
+    .split("")
+    .forEach((char) => {
+      const next = `${piece}${char}`;
+      if (piece && measureSvgText(next, size, weight) > maxWidth) {
+        pieces.push(piece);
+        piece = char;
+      } else {
+        piece = next;
+      }
+    });
+
+  if (piece) pieces.push(piece);
+  return pieces;
 }
 
 function wrapText(text, maxChars) {
@@ -1511,6 +1927,7 @@ async function syncBackend() {
   try {
     await apiRequest("/health");
     state.backendAvailable = true;
+    await restoreAuthSession();
     await saveBackendProfile();
     await saveBackendGroup(state.activeGroup);
     await joinBackendGroup(state.activeGroup);
@@ -1520,6 +1937,24 @@ async function syncBackend() {
     state.backendAvailable = false;
     state.remoteLeaderboard = null;
     render();
+  }
+}
+
+async function restoreAuthSession() {
+  if (!state.auth?.token) return false;
+
+  try {
+    const previousProfileId = state.profile.id;
+    const previousRecord = state.records[previousProfileId];
+    const previousActiveGroup = state.activeGroup;
+    const previousGroups = { ...state.groups };
+    const payload = await apiRequest("/auth/session");
+    applyAuthPayload(payload, { previousRecord, previousActiveGroup, previousGroups });
+    return true;
+  } catch {
+    state.auth = null;
+    removeStoredItem(STORAGE_KEYS.auth);
+    return false;
   }
 }
 
@@ -1643,6 +2078,10 @@ async function apiRequest(path, options = {}) {
     }
   };
 
+  if (state.auth?.token) {
+    fetchOptions.headers.Authorization = `Bearer ${state.auth.token}`;
+  }
+
   if (options.body) {
     fetchOptions.body = JSON.stringify(options.body);
   }
@@ -1706,6 +2145,40 @@ function normalizeAnswer(value) {
     .replace(/&/g, "and")
     .replace(/\+/g, "plus")
     .replace(/[^a-z0-9]/g, "");
+}
+
+function isAcceptedAnswer(guess, acceptedAnswers) {
+  const guessVariants = getAnswerVariants(guess);
+  const acceptedVariants = new Set(
+    acceptedAnswers.flatMap((answer) => getAnswerVariants(answer))
+  );
+
+  return guessVariants.some((variant) => acceptedVariants.has(variant));
+}
+
+function getAnswerVariants(value) {
+  const normalized = normalizeAnswer(value);
+  if (!normalized) return [];
+
+  const variants = new Set([normalized]);
+  if (normalized.startsWith("the") && normalized.length > 6) {
+    variants.add(normalized.slice(3));
+  }
+  if (normalized.endsWith("ies") && normalized.length > 6) {
+    variants.add(`${normalized.slice(0, -3)}y`);
+  }
+  if (normalized.endsWith("es") && normalized.length > 6) {
+    variants.add(normalized.slice(0, -2));
+  }
+  if (normalized.endsWith("s") && normalized.length > 5) {
+    variants.add(normalized.slice(0, -1));
+  }
+
+  return [...variants].filter(Boolean);
+}
+
+function sanitizeLogoMark(mark) {
+  return String(mark).replace(/[^a-z0-9-]/gi, "");
 }
 
 function normalizeGroupCode(value) {
@@ -1836,6 +2309,14 @@ function setStoredItem(key, value) {
   }
 }
 
+function removeStoredItem(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    fallbackStorage.delete(key);
+  }
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -1914,7 +2395,7 @@ function escapeSVG(value) {
 }
 
 function renderLogoMark(mark) {
-  const safeMark = escapeAttr(mark);
+  const safeMark = escapeAttr(sanitizeLogoMark(mark));
   return `
     <img
       class="brand-logo"

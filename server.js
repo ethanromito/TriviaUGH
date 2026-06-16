@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const http = require("node:http");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { URL } = require("node:url");
 
@@ -22,6 +23,8 @@ const MIME_TYPES = {
 
 function makeEmptyData() {
   return {
+    accounts: {},
+    sessions: {},
     players: {},
     groups: {},
     memberships: {},
@@ -36,6 +39,8 @@ function readData() {
     return {
       ...makeEmptyData(),
       ...data,
+      accounts: data.accounts || {},
+      sessions: data.sessions || {},
       players: data.players || {},
       groups: data.groups || {},
       memberships: data.memberships || {},
@@ -56,7 +61,7 @@ function jsonResponse(response, status, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization"
   });
   response.end(JSON.stringify(payload));
 }
@@ -70,6 +75,97 @@ function cleanName(value, max = 28) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, max);
+}
+
+function cleanEmail(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 120);
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail(value));
+}
+
+function isValidPassword(value) {
+  return String(value || "").length >= 6;
+}
+
+function makeAccountPlayerId(email) {
+  const digest = crypto.createHash("sha256").update(cleanEmail(email)).digest("hex").slice(0, 24);
+  return `acct-${digest}`;
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.pbkdf2Sync(String(password), salt, 120_000, 32, "sha256").toString("hex");
+  return { salt, hash };
+}
+
+function verifyPassword(password, account) {
+  if (!account?.salt || !account?.passwordHash) return false;
+  const { hash } = hashPassword(password, account.salt);
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(account.passwordHash, "hex"));
+}
+
+function makeSession(data, account) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 90).toISOString();
+  data.sessions[token] = {
+    token,
+    email: account.email,
+    playerId: account.playerId,
+    createdAt: now.toISOString(),
+    expiresAt
+  };
+  return data.sessions[token];
+}
+
+function getSession(data, request) {
+  const header = request.headers.authorization || "";
+  const token = header.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+
+  const session = data.sessions[token];
+  if (!session) return null;
+  if (Date.parse(session.expiresAt) < Date.now()) {
+    delete data.sessions[token];
+    writeData(data);
+    return null;
+  }
+  return session;
+}
+
+function getPlayerGroups(data, playerId) {
+  const cleanPlayerId = validatePlayerId(playerId);
+  return Object.values(data.memberships)
+    .flatMap((members) => Object.values(members || {}))
+    .filter((membership) => membership.playerId === cleanPlayerId)
+    .map((membership) => data.groups[membership.groupCode])
+    .filter(Boolean)
+    .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+}
+
+function makeAccountPayload(data, account, session) {
+  const player = data.players[account.playerId];
+  const results = getPlayerResults(data, account.playerId);
+  const groups = getPlayerGroups(data, account.playerId);
+  const activeGroup = player?.activeGroup && data.groups[player.activeGroup]
+    ? player.activeGroup
+    : groups[0]?.code || null;
+
+  return {
+    token: session?.token,
+    account: {
+      email: account.email,
+      playerId: account.playerId
+    },
+    player,
+    groups,
+    activeGroup,
+    results
+  };
 }
 
 function normalizeGroupCode(value) {
@@ -131,6 +227,7 @@ function ensurePlayer(data, id, name) {
   data.players[cleanId] = {
     id: cleanId,
     name: cleanName(name, 18) || existing.name || "Player",
+    activeGroup: existing.activeGroup || null,
     createdAt: existing.createdAt || now,
     updatedAt: now
   };
@@ -162,6 +259,10 @@ function ensureMembership(data, code, playerId) {
     playerId: cleanPlayerId,
     joinedAt: new Date().toISOString()
   };
+  if (data.players[cleanPlayerId]) {
+    data.players[cleanPlayerId].activeGroup = groupCode;
+    data.players[cleanPlayerId].updatedAt = new Date().toISOString();
+  }
   return data.memberships[groupCode][cleanPlayerId];
 }
 
@@ -208,6 +309,74 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/auth/signup") {
+    const body = await readBody(request);
+    const email = cleanEmail(body.email);
+    if (!isValidEmail(email) || !isValidPassword(body.password)) {
+      jsonResponse(response, 400, { error: "Enter a valid email and a password with at least 6 characters" });
+      return;
+    }
+    if (data.accounts[email]) {
+      jsonResponse(response, 409, { error: "Account already exists" });
+      return;
+    }
+
+    const playerId = makeAccountPlayerId(email);
+    const password = hashPassword(body.password);
+    const now = new Date().toISOString();
+    data.accounts[email] = {
+      email,
+      playerId,
+      passwordHash: password.hash,
+      salt: password.salt,
+      createdAt: now,
+      updatedAt: now
+    };
+    ensurePlayer(data, playerId, body.name);
+    const session = makeSession(data, data.accounts[email]);
+    writeData(data);
+    jsonResponse(response, 200, makeAccountPayload(data, data.accounts[email], session));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/auth/login") {
+    const body = await readBody(request);
+    const email = cleanEmail(body.email);
+    const account = data.accounts[email];
+    if (!account || !verifyPassword(body.password, account)) {
+      jsonResponse(response, 401, { error: "Email or password not found" });
+      return;
+    }
+
+    ensurePlayer(data, account.playerId, body.name || data.players[account.playerId]?.name);
+    const session = makeSession(data, account);
+    account.updatedAt = new Date().toISOString();
+    writeData(data);
+    jsonResponse(response, 200, makeAccountPayload(data, account, session));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/auth/session") {
+    const session = getSession(data, request);
+    const account = session ? data.accounts[session.email] : null;
+    if (!session || !account) {
+      jsonResponse(response, 401, { error: "Not signed in" });
+      return;
+    }
+    jsonResponse(response, 200, makeAccountPayload(data, account, session));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+    const session = getSession(data, request);
+    if (session) {
+      delete data.sessions[session.token];
+      writeData(data);
+    }
+    jsonResponse(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/players") {
     const body = await readBody(request);
     const player = ensurePlayer(data, body.id, body.name);
@@ -223,6 +392,16 @@ async function handleApi(request, response, url) {
   if (request.method === "GET" && parts[1] === "players" && parts[3] === "results") {
     const playerId = decodeURIComponent(parts[2] || "");
     jsonResponse(response, 200, { results: getPlayerResults(data, playerId) });
+    return;
+  }
+
+  if (request.method === "GET" && parts[1] === "players" && parts[3] === "groups") {
+    const playerId = decodeURIComponent(parts[2] || "");
+    const player = data.players[validatePlayerId(playerId)];
+    jsonResponse(response, 200, {
+      activeGroup: player?.activeGroup || null,
+      groups: getPlayerGroups(data, playerId)
+    });
     return;
   }
 

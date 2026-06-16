@@ -58,6 +58,23 @@
         </div>
 
         <div class="menu-actions" aria-label="Main menu options">
+          <section id="menuAuthCard" class="menu-auth-card" aria-label="Account">
+            <div class="menu-auth-copy">
+              <p class="eyebrow">Account</p>
+              <strong id="menuAuthStatus">Playing locally</strong>
+              <small id="menuAuthDetail">Log in to sync groups and scores.</small>
+            </div>
+            <div class="menu-auth-actions">
+              <button id="menuLoginButton" class="secondary-button" type="button">Log in</button>
+              <button id="menuLogoutButton" class="square-button subtle" type="button" aria-label="Log out" title="Log out" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <path d="m16 17 5-5-5-5"></path>
+                  <path d="M21 12H9"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
           <button id="menuLeaderboardButton" class="menu-action" type="button">
             <span>Leaderboard</span>
             <strong id="menuRankText">#</strong>
@@ -215,6 +232,38 @@
           </button>
         </div>
         <p id="joinOverlayAlert" class="join-alert" role="alert" hidden>Group Not Found</p>
+      </section>
+    </div>
+
+    <div id="authOverlay" class="menu-overlay" hidden>
+      <div class="menu-overlay-backdrop" data-auth-overlay-close></div>
+      <section class="menu-dialog auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authOverlayTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2 id="authOverlayTitle">Log in</h2>
+          </div>
+          <button id="closeAuthOverlayButton" class="square-button subtle" type="button" aria-label="Close login" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <p class="join-hint">Use the same account on any browser or device to restore your group, daily log, and leaderboard spot.</p>
+        <div class="auth-fields">
+          <label class="field-label" for="authNameInput">Display name</label>
+          <input id="authNameInput" autocomplete="nickname" maxlength="18" placeholder="Player name" type="text">
+          <label class="field-label" for="authEmailInput">Email</label>
+          <input id="authEmailInput" autocomplete="email" placeholder="you@example.com" type="email">
+          <label class="field-label" for="authPasswordInput">Password</label>
+          <input id="authPasswordInput" autocomplete="current-password" minlength="6" placeholder="At least 6 characters" type="password">
+        </div>
+        <div class="auth-submit-row">
+          <button id="authLoginButton" class="primary-button" type="button">Log in</button>
+          <button id="authSignupButton" class="secondary-button" type="button">Create account</button>
+        </div>
+        <p id="authAlert" class="join-alert" role="alert" hidden></p>
       </section>
     </div>
 

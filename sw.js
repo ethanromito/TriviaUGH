@@ -1,4 +1,4 @@
-const CACHE_NAME = "triviugh-v28";
+const CACHE_NAME = "triviugh-v32";
 const COVER_ASSETS = [
   "./assets/cover/trivi-ugh-update-v1.png"
 ];
@@ -9,10 +9,15 @@ const LOGO_ASSETS = [
   "./assets/logos/applepodcasts.svg",
   "./assets/logos/audi.svg",
   "./assets/logos/bankofamerica.svg",
+  "./assets/logos/bluetooth.svg",
+  "./assets/logos/cocacola.svg",
   "./assets/logos/doordash.svg",
   "./assets/logos/ferrari.svg",
+  "./assets/logos/ford.svg",
   "./assets/logos/fortnite.svg",
+  "./assets/logos/kfc.svg",
   "./assets/logos/mcdonalds.svg",
+  "./assets/logos/nasa.svg",
   "./assets/logos/netflix.svg",
   "./assets/logos/newbalance.svg",
   "./assets/logos/newyorktimes.svg",
@@ -22,10 +27,15 @@ const LOGO_ASSETS = [
   "./assets/logos/quizlet.svg",
   "./assets/logos/shazam.svg",
   "./assets/logos/soundcloud.svg",
+  "./assets/logos/spacex.svg",
   "./assets/logos/spotify.svg",
   "./assets/logos/starbucks.svg",
+  "./assets/logos/steam.svg",
   "./assets/logos/tacobell.svg",
   "./assets/logos/tesla.svg",
+  "./assets/logos/toyota.svg",
+  "./assets/logos/twitch.svg",
+  "./assets/logos/ubereats.svg",
   "./assets/logos/ubisoft.svg",
   "./assets/logos/youtube.svg"
 ];

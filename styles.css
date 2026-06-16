@@ -545,10 +545,60 @@ body.is-menu-open .menu-hero {
 
 .menu-actions {
   display: grid;
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: auto repeat(3, 1fr);
   gap: 18px;
   align-self: stretch;
   padding: 18px;
+}
+
+.menu-auth-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px;
+  color: var(--topic-ink);
+  background: #ffffff;
+  border: 2px solid var(--topic-ink);
+  border-radius: var(--radius);
+  box-shadow: 4px 4px 0 var(--topic-ink);
+}
+
+.menu-auth-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.menu-auth-copy strong,
+.menu-auth-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-auth-copy strong {
+  font-size: 1.1rem;
+  font-weight: 1000;
+}
+
+.menu-auth-copy small {
+  color: var(--topic-muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.menu-auth-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.menu-auth-actions .secondary-button {
+  width: auto;
+  min-width: 86px;
 }
 
 .menu-action {
@@ -1186,6 +1236,168 @@ button:focus-visible {
   border-radius: var(--radius);
 }
 
+.daily-shot-card {
+  width: 100%;
+  padding: clamp(10px, 2.2vw, 18px);
+  color: var(--shot-ink);
+  background: var(--shot-bg);
+  border: 2px solid var(--shot-ink);
+  border-radius: var(--radius);
+}
+
+.daily-shot-inner {
+  display: grid;
+  gap: 10px;
+  padding: clamp(14px, 3vw, 28px);
+  background: var(--shot-panel);
+  border: 3px solid var(--shot-ink);
+  border-radius: var(--radius);
+}
+
+.daily-shot-badge {
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 16px;
+  color: var(--shot-ink);
+  font-size: clamp(0.82rem, 2.6vw, 1rem);
+  font-weight: 1000;
+  line-height: 1;
+  background: var(--shot-secondary);
+  border: 2px solid var(--shot-ink);
+  border-radius: 7px;
+}
+
+.daily-shot-inner h2 {
+  margin: 0;
+  font-size: clamp(2.1rem, 8vw, 3.6rem);
+  font-weight: 1000;
+  line-height: 0.98;
+}
+
+.daily-shot-meta {
+  margin: 0 0 4px;
+  color: var(--shot-muted);
+  font-size: clamp(1rem, 3vw, 1.45rem);
+  font-weight: 950;
+}
+
+.daily-shot-questions,
+.daily-shot-logo-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.daily-shot-question,
+.daily-shot-topic,
+.daily-shot-logo {
+  background: rgba(255, 255, 255, 0.82);
+  border: 2px solid var(--shot-ink);
+  border-radius: var(--radius);
+}
+
+.daily-shot-question,
+.daily-shot-topic {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.daily-shot-question h3,
+.daily-shot-topic h3 {
+  margin: 0;
+  font-size: clamp(1rem, 3vw, 1.3rem);
+  font-weight: 1000;
+  line-height: 1.16;
+}
+
+.daily-shot-question p,
+.daily-shot-topic p {
+  margin: 0;
+  color: var(--shot-muted);
+  font-size: clamp(0.88rem, 2.5vw, 1.05rem);
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.daily-shot-section-title {
+  margin: 0;
+  font-size: clamp(1.15rem, 4vw, 1.55rem);
+  font-weight: 1000;
+  line-height: 1;
+}
+
+.daily-shot-logo-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.daily-shot-logo {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px;
+}
+
+.daily-shot-logo-frame {
+  display: grid;
+  width: 60px;
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 6px;
+  background: #ffffff;
+  border: 2px solid var(--shot-ink);
+  border-radius: 8px;
+}
+
+.daily-shot-logo-frame .brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0) contrast(1.45);
+}
+
+.daily-shot-logo-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.daily-shot-logo-copy strong,
+.daily-shot-logo-copy em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-style: normal;
+  line-height: 1.08;
+}
+
+.daily-shot-logo-copy strong {
+  font-size: clamp(0.95rem, 2.5vw, 1.12rem);
+  font-weight: 1000;
+}
+
+.daily-shot-logo-copy em {
+  color: var(--shot-muted);
+  font-size: clamp(0.78rem, 2.1vw, 0.9rem);
+  font-weight: 900;
+}
+
+.daily-shot-question.is-correct,
+.daily-shot-topic.is-correct,
+.daily-shot-logo.is-correct {
+  background: #d9f8df;
+  border-color: #146b33;
+}
+
+.daily-shot-question.is-missed,
+.daily-shot-topic.is-missed,
+.daily-shot-logo.is-missed {
+  background: #ffdce3;
+  border-color: #9b2142;
+}
+
 .empty-state {
   margin: 0;
   padding: 10px;
@@ -1314,6 +1526,37 @@ button:focus-visible {
   max-height: 60vh;
   overflow: auto;
   padding-right: 2px;
+}
+
+.auth-dialog {
+  width: min(100%, 480px);
+}
+
+.auth-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-fields input {
+  min-height: 46px;
+  min-width: 0;
+  padding: 0 12px;
+  color: var(--topic-ink);
+  font-size: 1rem;
+  font-weight: 850;
+  background: #ffffff;
+  border: 2px solid var(--topic-ink);
+  border-radius: var(--radius);
+}
+
+.auth-submit-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-submit-row .secondary-button {
+  width: 100%;
 }
 
 .logs-dialog {
@@ -1675,6 +1918,14 @@ button:focus-visible {
     padding: 14px;
   }
 
+  .menu-auth-card {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-auth-actions {
+    align-items: stretch;
+  }
+
   .menu-tagline {
     max-width: min(100%, 310px);
     font-size: clamp(0.96rem, 4.1vw, 1.12rem);
@@ -1738,6 +1989,22 @@ button:focus-visible {
 
   .overlay-history-viewer {
     max-height: none;
+  }
+
+  .auth-submit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-shot-logo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-shot-logo {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .daily-shot-logo-frame {
+    width: 56px;
   }
 }
 
